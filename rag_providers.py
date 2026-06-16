@@ -38,7 +38,14 @@ def embedding_provider_name() -> str:
 
 
 class LocalTfidfEmbeddings:
-    """Small local embedding model for API-free notebook retrieval examples."""
+    """Small local embedding model for API-free notebook retrieval examples.
+
+    This helper is intentionally lightweight and stateful: it fits a TF-IDF
+    vocabulary on the first document batch and reuses that vocabulary for later
+    queries. It is useful for local demos, but not for persisted vector stores
+    or workflows that need to add documents with new vocabulary after indexing.
+    Use a hosted or fixed-vocabulary embedding model for those cases.
+    """
 
     def __init__(self, max_features: int = 2048):
         from sklearn.feature_extraction.text import TfidfVectorizer
@@ -49,16 +56,22 @@ class LocalTfidfEmbeddings:
             norm="l2",
         )
         self._is_fit = False
+        self._fit_source: str | None = None
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        matrix = self.vectorizer.fit_transform(texts)
-        self._is_fit = True
+        if self._is_fit and self._fit_source == "documents":
+            matrix = self.vectorizer.transform(texts)
+        else:
+            matrix = self.vectorizer.fit_transform(texts)
+            self._is_fit = True
+            self._fit_source = "documents"
         return matrix.toarray().astype(float).tolist()
 
     def embed_query(self, text: str) -> list[float]:
         if not self._is_fit:
             self.vectorizer.fit([text])
             self._is_fit = True
+            self._fit_source = "query"
         return self.vectorizer.transform([text]).toarray()[0].astype(float).tolist()
 
 
